@@ -1,11 +1,12 @@
 use crate::image::ImageProvider;
 use crate::modules::tray::interface::TrayMenu;
+use cairo::ImageSurface;
 use color_eyre::{Report, Result};
 use glib::ffi::g_strfreev;
 use glib::translate::ToGlibPtr;
 use gtk::ffi::gtk_icon_theme_get_search_path;
 use gtk::gdk_pixbuf::{Colorspace, InterpType, Pixbuf};
-use gtk::prelude::IconThemeExt;
+use gtk::prelude::{GdkContextExt, IconThemeExt};
 use gtk::{IconLookupFlags, IconTheme, Image};
 use std::collections::HashSet;
 use std::ffi::CStr;
@@ -44,17 +45,42 @@ pub fn get_image(
     size: u32,
     prefer_icons: bool,
 ) -> Result<Image> {
-    if !prefer_icons && item.icon_pixmap.is_some() {
+    let pixbuf = if !prefer_icons && item.icon_pixmap.is_some() {
         get_image_from_pixmap(item, size)
     } else {
         get_image_from_icon_name(item, icon_theme, size)
             .or_else(|_| get_image_from_pixmap(item, size))
-    }
+    }?;
+
+    let image = if pixbuf.height() == size as i32 {
+        let image = Image::new();
+        ImageProvider::create_and_load_surface(&pixbuf, &image)?;
+        image
+    } else {
+        Image::from_surface(Some(&scale_image_to_height(pixbuf, size as i32)))
+    };
+
+    Ok(image)
+}
+
+fn scale_image_to_height(pixbuf: Pixbuf, size: i32) -> ImageSurface {
+    let scale = size as f64 / pixbuf.height() as f64;
+    let width = (pixbuf.width() as f64 * scale).ceil() as i32;
+    let height = (pixbuf.height() as f64 * scale).ceil() as i32;
+
+    let surf = ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
+    let context = cairo::Context::new(&surf).unwrap();
+
+    context.scale(scale, scale);
+    context.set_source_pixbuf(&pixbuf, 0., 0.);
+    context.paint().unwrap();
+
+    surf
 }
 
 /// Attempts to get a GTK `Image` component
 /// for the status notifier item's icon.
-fn get_image_from_icon_name(item: &TrayMenu, icon_theme: &IconTheme, size: u32) -> Result<Image> {
+fn get_image_from_icon_name(item: &TrayMenu, icon_theme: &IconTheme, size: u32) -> Result<Pixbuf> {
     if let Some(path) = item.icon_theme_path.as_ref() {
         if !path.is_empty() && !get_icon_theme_search_paths(icon_theme).contains(path) {
             icon_theme.append_search_path(path);
@@ -67,9 +93,7 @@ fn get_image_from_icon_name(item: &TrayMenu, icon_theme: &IconTheme, size: u32) 
 
     if let Some(icon_info) = icon_info {
         let pixbuf = icon_info.load_icon()?;
-        let image = Image::new();
-        ImageProvider::create_and_load_surface(&pixbuf, &image)?;
-        Ok(image)
+        Ok(pixbuf)
     } else {
         Err(Report::msg("could not find icon"))
     }
@@ -81,7 +105,7 @@ fn get_image_from_icon_name(item: &TrayMenu, icon_theme: &IconTheme, size: u32) 
 /// which has 8 bits per sample and a bit stride of `4*width`.
 /// The Pixbuf expects RGBA32 format, so some channel shuffling
 /// is required.
-fn get_image_from_pixmap(item: &TrayMenu, size: u32) -> Result<Image> {
+fn get_image_from_pixmap(item: &TrayMenu, size: u32) -> Result<Pixbuf> {
     const BITS_PER_SAMPLE: i32 = 8;
 
     let pixmap = item
@@ -120,8 +144,5 @@ fn get_image_from_pixmap(item: &TrayMenu, size: u32) -> Result<Image> {
     let pixbuf = pixbuf
         .scale_simple(size as i32, size as i32, InterpType::Bilinear)
         .unwrap_or(pixbuf);
-
-    let image = Image::new();
-    ImageProvider::create_and_load_surface(&pixbuf, &image)?;
-    Ok(image)
+    Ok(pixbuf)
 }

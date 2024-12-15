@@ -182,7 +182,7 @@ fn find_approx_height(v: &[IconPixmap], size: i32) -> Option<&IconPixmap> {
 mod tests {
 
     #[test]
-    fn test_find_approx_size() {
+    fn test_find_approx_height() {
         use super::{find_approx_height, IconPixmap};
 
         macro_rules! make_list {
@@ -197,7 +197,7 @@ mod tests {
                     .collect::<Vec<IconPixmap>>()
             };
         }
-        macro_rules! assert_found {
+        macro_rules! assert_correct {
             ($list:expr, $height:expr, $index:expr) => {
                 assert_eq!(
                     find_approx_height(&$list, $height).unwrap().height,
@@ -207,16 +207,16 @@ mod tests {
         }
 
         let list = make_list!([10, 20, 50, 40, 30]);
-        assert_found!(list, 1, 0);
-        assert_found!(list, 10, 0);
-        assert_found!(list, 11, 1);
-        assert_found!(list, 20, 1);
-        assert_found!(list, 21, 4);
-        assert_found!(list, 30, 4);
-        assert_found!(list, 31, 3);
-        assert_found!(list, 40, 3);
-        assert_found!(list, 41, 2);
-        assert_found!(list, 50, 2);
-        assert_found!(list, 51, 2);
+        assert_correct!(list, 1, 0);
+        assert_correct!(list, 10, 0);
+        assert_correct!(list, 11, 1);
+        assert_correct!(list, 20, 1);
+        assert_correct!(list, 21, 4);
+        assert_correct!(list, 30, 4);
+        assert_correct!(list, 31, 3);
+        assert_correct!(list, 40, 3);
+        assert_correct!(list, 41, 2);
+        assert_correct!(list, 50, 2);
+        assert_correct!(list, 51, 2);
     }
 }

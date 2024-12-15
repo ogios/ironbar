@@ -5,13 +5,14 @@ use color_eyre::{Report, Result};
 use glib::ffi::g_strfreev;
 use glib::translate::ToGlibPtr;
 use gtk::ffi::gtk_icon_theme_get_search_path;
-use gtk::gdk_pixbuf::{Colorspace, InterpType, Pixbuf};
+use gtk::gdk_pixbuf::{Colorspace, Pixbuf};
 use gtk::prelude::{GdkContextExt, IconThemeExt};
 use gtk::{IconLookupFlags, IconTheme, Image};
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};
 use std::ptr;
+use system_tray::item::IconPixmap;
 
 /// Gets the GTK icon theme search paths by calling the FFI function.
 /// Conveniently returns the result as a `HashSet`.
@@ -111,7 +112,9 @@ fn get_image_from_pixmap(item: &TrayMenu, size: u32) -> Result<Pixbuf> {
     let pixmap = item
         .icon_pixmap
         .as_ref()
-        .and_then(|pixmap| pixmap.first())
+        // The vec is sorted(ASC) with size(width==height) most of the time,
+        // but we can not be sure that it'll always sorted by `height`
+        .and_then(|pixmap| find_approx_height(pixmap, size as i32))
         .ok_or_else(|| Report::msg("Failed to get pixmap from tray icon"))?;
 
     if pixmap.width == 0 || pixmap.height == 0 {
@@ -141,8 +144,79 @@ fn get_image_from_pixmap(item: &TrayMenu, size: u32) -> Result<Pixbuf> {
         row_stride,
     );
 
-    let pixbuf = pixbuf
-        .scale_simple(size as i32, size as i32, InterpType::Bilinear)
-        .unwrap_or(pixbuf);
     Ok(pixbuf)
+}
+
+///  finds the pixmap
+///  which is the smallest but bigger than wanted
+///  or
+///  the biggest of all if no bigger than wanted
+///
+///  O(n)
+fn find_approx_height(v: &[IconPixmap], size: i32) -> Option<&IconPixmap> {
+    if v.is_empty() {
+        return None;
+    }
+    if v.len() == 1 {
+        return v.first();
+    }
+
+    let mut approx = &v[0];
+
+    for p in &v[1..] {
+        // p bigger than wanted size
+        // and then we check for
+        // `approx` is smaller than wanted || p smaller than `approx`
+        if (p.height >= size && (approx.height < size || p.height < approx.height))
+                // or p smaller than wanted
+                // but bigger than `approx`
+                || (p.height < size && p.height > approx.height)
+        {
+            approx = p;
+        }
+    }
+
+    Some(approx)
+}
+
+mod tests {
+
+    #[test]
+    fn test_find_approx_size() {
+        use super::{find_approx_height, IconPixmap};
+
+        macro_rules! make_list {
+            ($heights:expr) => {
+                $heights
+                    .iter()
+                    .map(|height| IconPixmap {
+                        width: 0,
+                        height: *height,
+                        pixels: vec![],
+                    })
+                    .collect::<Vec<IconPixmap>>()
+            };
+        }
+        macro_rules! assert_found {
+            ($list:expr, $height:expr, $index:expr) => {
+                assert_eq!(
+                    find_approx_height(&$list, $height).unwrap().height,
+                    $list[$index].height
+                );
+            };
+        }
+
+        let list = make_list!([10, 20, 50, 40, 30]);
+        assert_found!(list, 1, 0);
+        assert_found!(list, 10, 0);
+        assert_found!(list, 11, 1);
+        assert_found!(list, 20, 1);
+        assert_found!(list, 21, 4);
+        assert_found!(list, 30, 4);
+        assert_found!(list, 31, 3);
+        assert_found!(list, 40, 3);
+        assert_found!(list, 41, 2);
+        assert_found!(list, 50, 2);
+        assert_found!(list, 51, 2);
+    }
 }

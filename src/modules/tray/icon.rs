@@ -69,12 +69,13 @@ fn scale_image_to_height(pixbuf: Pixbuf, size: i32) -> ImageSurface {
     let width = (pixbuf.width() as f64 * scale).ceil() as i32;
     let height = (pixbuf.height() as f64 * scale).ceil() as i32;
 
-    let surf = ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
-    let context = cairo::Context::new(&surf).unwrap();
+    let surf = ImageSurface::create(cairo::Format::ARgb32, width, height)
+        .expect("Failed to create image surface");
+    let context = cairo::Context::new(&surf).expect("Failed to create cairo context");
 
     context.scale(scale, scale);
     context.set_source_pixbuf(&pixbuf, 0., 0.);
-    context.paint().unwrap();
+    context.paint().expect("Failed to paint scaled image");
 
     surf
 }
@@ -114,7 +115,7 @@ fn get_image_from_pixmap(item: &TrayMenu, size: u32) -> Result<Pixbuf> {
         .as_ref()
         // The vec is sorted(ASC) with size(width==height) most of the time,
         // but we can not be sure that it'll always sorted by `height`
-        .and_then(|pixmap| find_approx_height(pixmap, size as i32))
+        .and_then(|pixmap| find_approx_size(pixmap, size as i32))
         .ok_or_else(|| Report::msg("Failed to get pixmap from tray icon"))?;
 
     if pixmap.width == 0 || pixmap.height == 0 {
@@ -153,7 +154,7 @@ fn get_image_from_pixmap(item: &TrayMenu, size: u32) -> Result<Pixbuf> {
 ///  the biggest of all if no bigger than wanted
 ///
 ///  O(n)
-fn find_approx_height(v: &[IconPixmap], size: i32) -> Option<&IconPixmap> {
+fn find_approx_size(v: &[IconPixmap], size: i32) -> Option<&IconPixmap> {
     if v.is_empty() {
         return None;
     }
@@ -167,10 +168,10 @@ fn find_approx_height(v: &[IconPixmap], size: i32) -> Option<&IconPixmap> {
         // p bigger than wanted size
         // and then we check for
         // `approx` is smaller than wanted || p smaller than `approx`
-        if (p.height >= size && (approx.height < size || p.height < approx.height))
+        if (p.width >= size && (approx.width < size || p.width < approx.width))
                 // or p smaller than wanted
                 // but bigger than `approx`
-                || (p.height < size && p.height > approx.height)
+                || (p.width < size && p.width > approx.width)
         {
             approx = p;
         }
@@ -183,25 +184,25 @@ mod tests {
 
     #[test]
     fn test_find_approx_height() {
-        use super::{find_approx_height, IconPixmap};
+        use super::{find_approx_size, IconPixmap};
 
         macro_rules! make_list {
             ($heights:expr) => {
                 $heights
                     .iter()
-                    .map(|height| IconPixmap {
-                        width: 0,
-                        height: *height,
+                    .map(|width| IconPixmap {
+                        width: *width,
+                        height: 0,
                         pixels: vec![],
                     })
                     .collect::<Vec<IconPixmap>>()
             };
         }
         macro_rules! assert_correct {
-            ($list:expr, $height:expr, $index:expr) => {
+            ($list:expr, $width:expr, $index:expr) => {
                 assert_eq!(
-                    find_approx_height(&$list, $height).unwrap().height,
-                    $list[$index].height
+                    find_approx_size(&$list, $width).unwrap().width,
+                    $list[$index].width
                 );
             };
         }
